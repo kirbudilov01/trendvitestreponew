@@ -1,11 +1,11 @@
 import logging
 from datetime import datetime, timezone
+from celery.exceptions import SoftTimeLimitExceeded
 
 from .celery_app import celery_app
 from .resolver import resolve_youtube_channel, ResolveStatus
 from .yt.client import YouTubeClient
 from .state import STATE
-
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +26,11 @@ def finalize_run_task(self, run_id: int):
     except Exception as e:
         logger.exception(f"An error occurred while trying to finalize Run {run_id}: {e}")
 
-@celery_app.task(bind=True)
+# Устанавливаем soft time limit в 60 секунд.
+@celery_app.task(bind=True, soft_time_limit=60)
 def process_channel_job(self, job_id: int, run_id: int):
     """
-    Основная задача для обработки одного Job, теперь с обновлением состояния.
+    Основная задача для обработки одного Job, теперь с обновлением состояния и TTL.
     """
     logger.info(f"Starting to process Job {job_id} for Run {run_id}.")
 
@@ -38,7 +39,6 @@ def process_channel_job(self, job_id: int, run_id: int):
         logger.error(f"Job {job_id} not found in state. Aborting.")
         return
 
-    # 1. Обновляем статус на PROCESSING
     job.status = "PROCESSING"
     job.updated_at = datetime.now(timezone.utc)
     STATE.update_job(job)
@@ -47,7 +47,6 @@ def process_channel_job(self, job_id: int, run_id: int):
         client = YouTubeClient()
         result = resolve_youtube_channel(job.input_channel, client)
 
-        # 2. Обновляем Job с результатом
         job.updated_at = datetime.now(timezone.utc)
         if result.status == ResolveStatus.RESOLVED:
             job.status = "DONE"
@@ -59,9 +58,16 @@ def process_channel_job(self, job_id: int, run_id: int):
         STATE.update_job(job)
         logger.info(f"Job {job_id} finished with status {job.status}.")
 
+    except SoftTimeLimitExceeded:
+        logger.warning(f"Job {job_id} exceeded its TTL.")
+        job.status = "FAILED"
+        job.last_error = "TTL exceeded"
+        job.updated_at = datetime.now(timezone.utc)
+        STATE.update_job(job)
+        self.update_state(state='FAILURE', meta={'exc': 'SoftTimeLimitExceeded'})
+
     except Exception as e:
         logger.exception(f"An unexpected error occurred in Job {job_id}: {e}")
-        # Обновляем Job с информацией об ошибке
         job.status = "FAILED"
         job.last_error = str(e)
         job.updated_at = datetime.now(timezone.utc)
@@ -69,5 +75,4 @@ def process_channel_job(self, job_id: int, run_id: int):
         self.update_state(state='FAILURE', meta={'exc': str(e)})
 
     finally:
-        # 3. После каждой джобы пытаемся финализировать Run
         finalize_run_task.delay(run_id)

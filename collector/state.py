@@ -23,8 +23,20 @@ class InMemoryState:
                 cls._instance = super(InMemoryState, cls).__new__(cls)
                 cls._instance._runs: Dict[int, Run] = {}
                 cls._instance._jobs: Dict[int, Job] = {}
+                cls._instance._run_id_counter = 0
+                cls._instance._job_id_counter = 0
                 logger.info("InMemoryState initialized.")
         return cls._instance
+
+    def get_next_run_id(self) -> int:
+        with self._lock:
+            self._run_id_counter += 1
+            return self._run_id_counter
+
+    def get_next_job_id(self) -> int:
+        with self._lock:
+            self._job_id_counter += 1
+            return self._job_id_counter
 
     def create_run(self, run: Run) -> None:
         with self._lock:
@@ -64,6 +76,8 @@ class InMemoryState:
         with self._lock:
             self._runs.clear()
             self._jobs.clear()
+            self._run_id_counter = 0
+            self._job_id_counter = 0
             logger.warning("InMemoryState cleared.")
 
 # Глобальный экземпляр, который будет использоваться во всем приложении

@@ -1,7 +1,7 @@
 import logging
 from .celery_app import celery_app
 from .resolver import resolve_youtube_channel
-from .youtube_client import YouTubeClient
+from .yt.client import YouTubeClient
 from .models import Job  # Assuming Job model is used to fetch job details
 
 logger = logging.getLogger(__name__)

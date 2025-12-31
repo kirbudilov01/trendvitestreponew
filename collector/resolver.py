@@ -4,11 +4,12 @@ from typing import Optional
 from pydantic import BaseModel
 from enum import Enum
 
-from .youtube_client import YouTubeClient
+# Updated import path
+from .yt.client import YouTubeClient
 
 logger = logging.getLogger(__name__)
 
-# Pre-compiled regex patterns for efficiency
+# Regex patterns remain the same
 RE_CHANNEL_ID = re.compile(r"(UC[a-zA-Z0-9_-]{22})")
 RE_USER = re.compile(r"/(?:user)/([a-zA-Z0-9_-]+)")
 RE_HANDLE = re.compile(r"/(@[a-zA-Z0-9_.-]+)")
@@ -30,40 +31,42 @@ class ResolveResult(BaseModel):
     input_type: Optional[str] = None
 
 
+def _get_channel_id_from_response(response: Optional[dict]) -> Optional[str]:
+    """Helper to safely extract channel ID from a channels.list response."""
+    if response and "items" in response and len(response["items"]) > 0:
+        return response["items"][0].get("id")
+    return None
+
+
 def resolve_youtube_channel(input_str: str, client: YouTubeClient) -> ResolveResult:
     """
-    Resolves a YouTube channel input string to a 'UC...' channel ID.
-
-    This function prioritizes cheap resolution methods and avoids expensive searches
-    in accordance with the PR2 requirements.
+    Resolves a YouTube channel input string to a 'UC...' channel ID using the new client.
     """
     input_str = input_str.strip()
     logger.info(f"Attempting to resolve input: '{input_str}'")
 
-    # 1. Direct Channel ID (UC...) - Most reliable
+    # 1. Direct Channel ID (UC...) - No change
     match = RE_CHANNEL_ID.search(input_str)
     if match:
         channel_id = match.group(1)
         logger.info(f"Found direct channel ID '{channel_id}' in input.")
         return ResolveResult(
-            status=ResolveStatus.RESOLVED,
-            youtube_channel_id=channel_id,
-            input_str=input_str,
-            input_type="CHANNEL_ID"
+            status=ResolveStatus.RESOLVED, youtube_channel_id=channel_id,
+            input_str=input_str, input_type="CHANNEL_ID"
         )
 
-    # 2. User URL (/user/...) - Requires a cheap API call
+    # 2. User URL (/user/...) - Use new client method
     match = RE_USER.search(input_str)
     if match:
         username = match.group(1)
         logger.info(f"Detected user URL with username: '{username}'. Attempting API call.")
-        channel_id = client.get_channel_id_for_user(username)
+        response = client.channels_list(part="id", forUsername=username)
+        channel_id = _get_channel_id_from_response(response)
+
         if channel_id:
             return ResolveResult(
-                status=ResolveStatus.RESOLVED,
-                youtube_channel_id=channel_id,
-                input_str=input_str,
-                input_type="USER_URL"
+                status=ResolveStatus.RESOLVED, youtube_channel_id=channel_id,
+                input_str=input_str, input_type="USER_URL"
             )
         else:
             return ResolveResult(
@@ -73,21 +76,20 @@ def resolve_youtube_channel(input_str: str, client: YouTubeClient) -> ResolveRes
                 input_type="USER_URL"
             )
 
-    # 3. Handle URL (/@...) - Requires a cheap API call
+    # 3. Handle URL (/@...) - Use new client method
     match = RE_HANDLE.search(input_str)
     if match:
-        handle = match.group(1)
+        handle = match.group(1).lstrip('@')
         logger.info(f"Detected handle URL with handle: '{handle}'. Attempting API call.")
-        channel_id = client.get_channel_id_for_handle(handle)
+        response = client.channels_list(part="id", forHandle=handle)
+        channel_id = _get_channel_id_from_response(response)
+
         if channel_id:
             return ResolveResult(
-                status=ResolveStatus.RESOLVED,
-                youtube_channel_id=channel_id,
-                input_str=input_str,
-                input_type="HANDLE"
+                status=ResolveStatus.RESOLVED, youtube_channel_id=channel_id,
+                input_str=input_str, input_type="HANDLE"
             )
         else:
-            # Если API-вызов не дал результата, помечаем как FAILED, т.к. дешевая попытка уже сделана
             return ResolveResult(
                 status=ResolveStatus.FAILED,
                 input_str=input_str,
@@ -95,11 +97,10 @@ def resolve_youtube_channel(input_str: str, client: YouTubeClient) -> ResolveRes
                 input_type="HANDLE"
             )
 
-    # 4. Custom URL (/c/...) - Requires search, flag for fallback
+    # 4. Custom URL (/c/...) - No change, still needs fallback
     match = RE_CUSTOM_URL.search(input_str)
     if match:
         custom_name = match.group(1)
-        logger.info(f"Detected custom URL '/c/{custom_name}'. Flagging for search fallback.")
         return ResolveResult(
             status=ResolveStatus.NEEDS_SEARCH_FALLBACK,
             input_str=input_str,
@@ -107,27 +108,22 @@ def resolve_youtube_channel(input_str: str, client: YouTubeClient) -> ResolveRes
             input_type="CUSTOM_URL"
         )
 
-    # 5. Raw Handle (e.g., "@handle" or "handle") - Broad catch-all, flag for fallback
+    # 5. Raw Handle - Use new client method
     match = RE_RAW_HANDLE.search(input_str)
     if match:
-        # Basic sanity check to avoid matching long, random strings
         if len(input_str) > 70 or " " in input_str:
-             return ResolveResult(
-                status=ResolveStatus.FAILED,
-                input_str=input_str,
-                reason="Unrecognized input format.",
-                input_type="UNKNOWN"
-            )
+            return ResolveResult(status=ResolveStatus.FAILED, input_str=input_str,
+                                 reason="Unrecognized input format.", input_type="UNKNOWN")
 
-        handle = match.group(1)
+        handle = match.group(1).lstrip('@')
         logger.info(f"Detected raw handle '{handle}'. Attempting API call.")
-        channel_id = client.get_channel_id_for_handle(handle)
+        response = client.channels_list(part="id", forHandle=handle)
+        channel_id = _get_channel_id_from_response(response)
+
         if channel_id:
             return ResolveResult(
-                status=ResolveStatus.RESOLVED,
-                youtube_channel_id=channel_id,
-                input_str=input_str,
-                input_type="RAW_HANDLE"
+                status=ResolveStatus.RESOLVED, youtube_channel_id=channel_id,
+                input_str=input_str, input_type="RAW_HANDLE"
             )
         else:
             return ResolveResult(
@@ -137,10 +133,7 @@ def resolve_youtube_channel(input_str: str, client: YouTubeClient) -> ResolveRes
                 input_type="RAW_HANDLE"
             )
 
-    logger.warning(f"Could not recognize format for input: '{input_str}'")
     return ResolveResult(
-        status=ResolveStatus.FAILED,
-        input_str=input_str,
-        reason="Unrecognized input format.",
-        input_type="UNKNOWN"
+        status=ResolveStatus.FAILED, input_str=input_str,
+        reason="Unrecognized input format.", input_type="UNKNOWN"
     )

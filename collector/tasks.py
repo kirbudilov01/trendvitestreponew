@@ -34,7 +34,7 @@ def process_channel_job(self, job_id: int, input_channel_str: str):
         # job.youtube_channel_id = result.youtube_channel_id
         # job.save()
 
-        return result.dict()
+        return result.model_dump()
 
     except Exception as e:
         logger.exception(f"An unexpected error occurred in job_id {job_id}: {e}")

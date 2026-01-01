@@ -1,27 +1,28 @@
 import asyncio
 import time
 import logging
-from collector.redis_client import get_redis_client
+from .redis_client import shared_redis_client
 
 logger = logging.getLogger(__name__)
 
-# Based on provided production code
 async def throttle(user_id: str, max_requests: int = 5, period: int = 1):
     """
-    Asynchronous request rate limiter using Redis ZSET.
+    Asynchronous request rate limiter using Redis ZSET with a shared client.
     """
-    redis = get_redis_client()
+    redis = shared_redis_client
     key = f"throttle:{user_id}"
     now = time.time()
 
-    # Clean up old timestamps
-    await redis.zremrangebyscore(key, 0, now - period)
+    async with redis.pipeline(transaction=True) as pipe:
+        # 1. Clean up old timestamps and get the current count
+        pipe.zremrangebyscore(key, 0, now - period)
+        pipe.zcard(key)
+        results = await pipe.execute()
 
-    # Check current request count
-    current_requests = await redis.zcard(key)
+    current_requests = results[1]
 
     if current_requests < max_requests:
-        # Add current timestamp and allow request
+        # Allow request and add new timestamp
         await redis.zadd(key, {str(now): now})
         logger.debug(f"Request allowed for {user_id}. Count: {current_requests + 1}/{max_requests}")
         return
@@ -29,7 +30,6 @@ async def throttle(user_id: str, max_requests: int = 5, period: int = 1):
     # If limit is exceeded, calculate wait time
     oldest_timestamp_tuple = await redis.zrange(key, 0, 0, withscores=True)
     if not oldest_timestamp_tuple:
-        # Should not happen if current_requests > 0, but as a safeguard
         await redis.zadd(key, {str(now): now})
         return
 
@@ -42,4 +42,3 @@ async def throttle(user_id: str, max_requests: int = 5, period: int = 1):
 
     # Add current timestamp after waiting
     await redis.zadd(key, {str(time.time()): time.time()})
-    await redis.aclose()

@@ -1,8 +1,20 @@
-import redis.asyncio as redis
 import os
+import redis.asyncio as redis
 
-# Production-ready Redis client provider
-# We create a new client for each request to ensure thread-safety
+# Create a single, shared Redis connection pool
+# This avoids creating a new connection for every request, which is inefficient.
+redis_pool = redis.ConnectionPool.from_url(
+    os.environ.get("REDIS_URL", "redis://localhost:6379"),
+    max_connections=50,
+    decode_responses=True
+)
+
 def get_redis_client() -> redis.Redis:
-    redis_url = os.environ.get("REDIS_URL", "redis://localhost:6379")
-    return redis.from_url(redis_url, decode_responses=True)
+    """
+    Returns a Redis client instance from the shared connection pool.
+    """
+    return redis.Redis(connection_pool=redis_pool)
+
+# A single client instance can be reused if preferred, as it's thread-safe.
+# This avoids the overhead of creating a new client object each time.
+shared_redis_client = get_redis_client()

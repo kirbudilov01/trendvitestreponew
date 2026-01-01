@@ -58,37 +58,52 @@ class YouTubeClientRotator:
             if key in self._api_keys:
                 self._api_keys.remove(key)
 
-    async def safe_execute(self, owner_id: str, func, **kwargs):
-        # Throttle requests per user
+    async def safe_execute(self, owner_id: str, func, max_retries: int = 5, **kwargs):
+        # Throttle requests per user before the first attempt
         await throttle(user_id=owner_id)
 
-        while True:
+        last_exception = None
+        for attempt in range(max_retries):
             api_key = await self._get_key()
             try:
-                # Client is not thread-safe, create a new one for each call
                 youtube = build_youtube_client(api_key)
-                logger.info(f"Executing API call for owner {owner_id} with key ending in ...{api_key[-4:]}")
+                logger.info(
+                    f"Executing API call (owner: {owner_id}, attempt: {attempt + 1}/{max_retries}) "
+                    f"with key ...{api_key[-4:]}"
+                )
                 return await asyncio.to_thread(func, youtube=youtube, **kwargs)
 
             except HttpError as e:
-                is_quota_error = "quotaExceeded" in str(
-                    e.content
-                ) or "dailyLimitExceeded" in str(e.content)
+                last_exception = e
+                is_quota_error = "quotaExceeded" in str(e.content) or "dailyLimitExceeded" in str(e.content)
+                is_transient_error = e.status_code == 429 or e.status_code >= 500
 
                 if is_quota_error:
-                    logger.warning(
-                        f"Quota error with key ...{api_key[-4:]}. Putting it on cooldown."
-                    )
+                    logger.warning(f"Quota error with key ...{api_key[-4:]}. Cooldown and try next key.")
                     await self._cooldown_key(api_key)
-                    # Try next key immediately
-                    continue
-                else:
-                    # For other HTTP errors, re-raise
-                    logger.error(f"API call failed with non-quota error: {e}")
-                    raise
-            except Exception as e:
-                logger.error(f"An unexpected error occurred: {e}")
+                    continue  # Immediately try with the next available key
+
+                if is_transient_error:
+                    wait_time = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(
+                        f"Transient error (HTTP {e.status_code}). "
+                        f"Retrying in {wait_time:.2f} seconds."
+                    )
+                    await asyncio.sleep(wait_time)
+                    continue # Retry with a new key after backoff
+
+                # For other non-transient client errors (e.g., 400, 404), fail fast
+                logger.error(f"Non-retriable API error (HTTP {e.status_code}): {e}")
                 raise
+
+            except Exception as e:
+                logger.error(f"An unexpected error occurred during API call: {e}")
+                last_exception = e
+                # Break the loop for non-HttpErrors and re-raise after the loop
+                break
+
+        # If all retries failed, raise the last captured exception
+        raise last_exception or RuntimeError("API call failed after all retries")
 
 
 def get_yt_client() -> "YouTubeClientRotator":

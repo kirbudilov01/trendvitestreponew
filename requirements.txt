@@ -1,8 +1,0 @@
-celery
-redis
-pydantic
-google-api-python-client
-aiohttp
-pytest
-pytest-asyncio
-mock

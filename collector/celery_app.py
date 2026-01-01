@@ -7,6 +7,9 @@ celery_app = Celery(
     include=["collector.tasks"]
 )
 
+# Broker settings for connection pooling
+celery_app.conf.broker_pool_limit = 10
+
 # Disable result backend and apply recommended settings for reliability
 celery_app.conf.update(
     task_ignore_result=True,

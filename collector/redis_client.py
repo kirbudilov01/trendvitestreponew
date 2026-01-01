@@ -5,7 +5,7 @@ import redis.asyncio as redis
 # This avoids creating a new connection for every request, which is inefficient.
 redis_pool = redis.ConnectionPool.from_url(
     os.environ.get("REDIS_URL", "redis://localhost:6379"),
-    max_connections=50,
+    max_connections=int(os.environ.get("REDIS_MAX_CONNECTIONS", 50)),
     decode_responses=True
 )
 

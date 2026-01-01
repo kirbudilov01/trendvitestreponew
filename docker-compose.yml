@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  collector_worker:
+    build: .
+    command: celery -A collector.celery_app worker -l info
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - YT_API_KEYS=${YT_API_KEYS}
+      - REDIS_MAX_CONNECTIONS=20
+    depends_on:
+      - redis

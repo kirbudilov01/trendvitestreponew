@@ -26,7 +26,7 @@ def finalize_run_task(self, run_id: int):
     except Exception as e:
         logger.exception(f"An error occurred while trying to finalize Run {run_id}: {e}")
 
-@celery_app.task(bind=True)
+@celery_app.task(bind=True, soft_time_limit=900, time_limit=1200)  # 15 min soft, 20 min hard
 def process_channel_job(self, job_id: int, run_id: int):
     """
     Основная задача для обработки одного Job, теперь с обновлением состояния.

@@ -2,6 +2,7 @@ import logging
 from datetime import datetime, timezone
 
 from .celery_app import celery_app
+from .redis_client import redis_client
 from .resolver import resolve_youtube_channel, ResolveStatus
 from .yt.client import YouTubeClient
 from .state import STATE
@@ -14,10 +15,17 @@ def finalize_run_task(self, run_id: int):
     """
     Асинхронная задача для вызова логики финализации Run.
     """
-    from .orchestrator import Orchestrator # Импортируем здесь, чтобы избежать цикла
-    logger.info(f"Attempting to finalize Run {run_id}.")
-    orchestrator = Orchestrator()
+    lock_key = f"finalize_run_lock:{run_id}"
+    lock = redis_client.lock(lock_key, timeout=60)
+
+    if not lock.acquire(blocking=False):
+        logger.info(f"Finalization for Run {run_id} is already in progress. Skipping.")
+        return
+
     try:
+        from .orchestrator import Orchestrator # Импортируем здесь, чтобы избежать цикла
+        logger.info(f"Attempting to finalize Run {run_id}.")
+        orchestrator = Orchestrator()
         finalized = orchestrator.finalize_run(run_id)
         if finalized:
             logger.info(f"Run {run_id} was successfully finalized.")
@@ -25,6 +33,8 @@ def finalize_run_task(self, run_id: int):
             logger.info(f"Run {run_id} is not yet ready to be finalized.")
     except Exception as e:
         logger.exception(f"An error occurred while trying to finalize Run {run_id}: {e}")
+    finally:
+        lock.release()
 
 @celery_app.task(bind=True, soft_time_limit=900, time_limit=1200)  # 15 min soft, 20 min hard
 def process_channel_job(self, job_id: int, run_id: int):
@@ -70,4 +80,4 @@ def process_channel_job(self, job_id: int, run_id: int):
 
     finally:
         # 3. После каждой джобы пытаемся финализировать Run
-        finalize_run_task.delay(run_id)
+        finalize_run_task.apply_async(args=[run_id], countdown=5)

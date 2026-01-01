@@ -1,0 +1,7 @@
+celery
+redis
+pydantic
+google-api-python-client
+pytest
+pytest-asyncio
+freezegun

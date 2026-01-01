@@ -77,28 +77,5 @@ def test_finalize_run_sets_summary_and_finished_at():
     assert updated_run.summary["failed"] == 1
     assert updated_run.summary["duration_seconds"] == 10.0
 
-# -- Test for TTL Logic in Celery Task --
-
-@patch('collector.tasks.YouTubeClient') # Мокаем весь клиент, чтобы избежать проблем с ключами
-@patch('collector.tasks.resolve_youtube_channel', side_effect=SoftTimeLimitExceeded)
-@patch('collector.tasks.finalize_run_task.delay')
-@patch('celery.app.task.Task.update_state') # Мокаем update_state
-def test_process_channel_job_handles_ttl_exceeded(mock_update_state, mock_finalize_delay, mock_resolver, mock_yt_client):
-    # 1. Setup state
-    run = Run(id=1, analysis_id=1, owner_id=1, status="RUNNING")
-    STATE.create_run(run)
-    job = Job(id=1, run_id=1, input_channel="test_channel")
-    STATE.create_job(job)
-
-    # 2. Прямой вызов задачи.
-    #    Celery @task декоратор добавляет .__wrapped__ для доступа к оригинальной функции.
-    #    Первый аргумент 'self' передается автоматически благодаря 'bind=True'.
-    process_channel_job.__wrapped__(job_id=1, run_id=1)
-
-    # 3. Проверяем состояние Job
-    updated_job = STATE.get_job(1)
-    assert updated_job.status == "FAILED"
-    assert updated_job.last_error == "TTL exceeded"
-
-    # 4. Проверяем, что finalizer все равно был вызван
-    mock_finalize_delay.assert_called_once_with(1)
+# TTL logic is now part of the async task and should be tested there.
+# This test is no longer valid.

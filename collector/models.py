@@ -13,6 +13,13 @@ class Job(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
+
+class ResolveResult(BaseModel):
+    youtube_channel_id: Optional[str] = None
+    username: Optional[str] = None
+    needs_search_fallback: bool = False
+    error: Optional[str] = None
+
 class Run(BaseModel):
     id: int
     analysis_id: int

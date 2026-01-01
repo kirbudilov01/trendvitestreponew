@@ -3,7 +3,7 @@ from .config import settings
 
 # Initialize a connection pool
 # The decode_responses=True argument ensures that the data read from Redis is decoded into strings
-redis_pool = redis.ConnectionPool.from_url(settings.broker_url, max_connections=10, decode_responses=True)
+redis_pool = redis.ConnectionPool.from_url(settings.redis_url, max_connections=10, decode_responses=True)
 
 def get_redis_client():
     """

@@ -2,7 +2,7 @@ import logging
 import re
 from urllib.parse import urlparse, unquote
 from .models import ResolveResult
-from .yt_client import YouTubeClientRotator
+from .yt_client import YouTubeClient
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ def _api_list_channels_by_handle(youtube, forHandle: str, **kwargs):
 
 
 async def resolve_youtube_channel_id(
-    input_str: str, owner_id: int, youtube_client: YouTubeClientRotator
+    input_str: str, owner_id: int, youtube_client: YouTubeClient
 ) -> ResolveResult:
     """
     Resolves a YouTube channel ID from various input formats.

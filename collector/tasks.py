@@ -5,7 +5,7 @@ from celery.exceptions import SoftTimeLimitExceeded
 
 from .celery_app import celery_app
 from .resolver_v2 import resolve_youtube_channel_id
-from .yt_client import get_yt_client
+from .yt_client import youtube_client
 from .state import STATE
 from .redis_client import shared_redis_client
 
@@ -49,11 +49,10 @@ async def process_channel_job_async(job_id: int, run_id: int):
         job.updated_at = datetime.now(timezone.utc)
         STATE.update_job(job)
 
-        client = get_yt_client()
         result = await resolve_youtube_channel_id(
             input_str=job.input_channel,
             owner_id=run.owner_id,
-            youtube_client=client
+            youtube_client=youtube_client
         )
 
         job.updated_at = datetime.now(timezone.utc)

@@ -1,5 +1,5 @@
 import pytest
-from unittest.mock import AsyncMock, ANY
+from unittest.mock import AsyncMock, ANY, patch
 
 from collector.resolver_v2 import resolve_youtube_channel_id
 from collector.models import ResolveResult

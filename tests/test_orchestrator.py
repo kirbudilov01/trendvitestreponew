@@ -56,7 +56,7 @@ def test_get_run_status_calculates_partial_progress():
     assert status["progress"] == 0.5
 
 @freeze_time("2024-01-01 12:00:00")
-def test_finalize_run_sets_summary_and_finished_at():
+def test_finalize_run_with_needs_search_status():
     orchestrator = Orchestrator()
 
     with freeze_time("2024-01-01 11:59:50"):
@@ -65,6 +65,7 @@ def test_finalize_run_sets_summary_and_finished_at():
 
     STATE.create_job(Job(id=1, run_id=1, input_channel="c1", status="DONE"))
     STATE.create_job(Job(id=2, run_id=1, input_channel="c2", status="FAILED"))
+    STATE.create_job(Job(id=3, run_id=1, input_channel="c3", status="NEEDS_SEARCH"))
 
     orchestrator.finalize_run(1)
 
@@ -72,10 +73,8 @@ def test_finalize_run_sets_summary_and_finished_at():
     assert updated_run.status == "FINISHED"
     assert updated_run.finished_at is not None
     assert updated_run.summary is not None
-    assert updated_run.summary["total"] == 2
+    assert updated_run.summary["total"] == 3
     assert updated_run.summary["done"] == 1
     assert updated_run.summary["failed"] == 1
+    assert updated_run.summary["needs_search"] == 1
     assert updated_run.summary["duration_seconds"] == 10.0
-
-# TTL logic is now part of the async task and should be tested there.
-# This test is no longer valid.

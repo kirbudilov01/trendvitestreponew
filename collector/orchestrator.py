@@ -45,7 +45,7 @@ class Orchestrator:
         jobs = STATE.get_jobs_for_run(run_id)
         total_jobs = len(jobs)
 
-        status_counts = {"PENDING": 0, "PROCESSING": 0, "DONE": 0, "FAILED": 0}
+        status_counts = {"PENDING": 0, "PROCESSING": 0, "DONE": 0, "FAILED": 0, "NEEDS_SEARCH": 0}
         failed_jobs_details = []
 
         for job in jobs:
@@ -57,9 +57,8 @@ class Orchestrator:
                     "error": job.last_error
                 })
 
-        done_count = status_counts.get("DONE", 0)
-        failed_count = status_counts.get("FAILED", 0)
-        progress = (done_count + failed_count) / total_jobs if total_jobs > 0 else 1.0
+        finished_count = sum(status_counts.get(s, 0) for s in ["DONE", "FAILED", "NEEDS_SEARCH"])
+        progress = finished_count / total_jobs if total_jobs > 0 else 1.0
 
         return {
             "run_id": run.id,
@@ -87,14 +86,14 @@ class Orchestrator:
         run.status = "FINISHED"
         run.finished_at = datetime.now(timezone.utc)
 
-        done_count = len([j for j in jobs if j.status == "DONE"])
-        failed_count = total_jobs - done_count
+        status_counts = self.get_run_status(run_id)["status_counts"]
         duration = (run.finished_at - run.created_at).total_seconds()
 
         run.summary = {
             "total": total_jobs,
-            "done": done_count,
-            "failed": failed_count,
+            "done": status_counts.get("DONE", 0),
+            "failed": status_counts.get("FAILED", 0),
+            "needs_search": status_counts.get("NEEDS_SEARCH", 0),
             "duration_seconds": round(duration, 2)
         }
 
